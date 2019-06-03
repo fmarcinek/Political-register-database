@@ -4,18 +4,11 @@ import json
 
 # TODO: remove cleaning mode
 
-stringCast = {
-    't' : 'true',
-    'f' : 'false',
-    'support' : 'support',
-    'protest' : 'protest'
-}
-
 def cast(value):
     try:
         return int(value)
     except:
-        return stringCast[value]
+        return value
 
 def prepareData(data):
     data = [list(map(cast,d[0][1:-1].split(','))) for d in data]
@@ -49,9 +42,9 @@ def openCommand():
 
 def leaderCommand(args, cur):
     leaderArgs = json.loads(args)['leader']
-    member, password = [leaderArgs[key] for key in ['member','password']]
+    timestamp, member, password = [leaderArgs[key] for key in ['timestamp','member','password']]
     try:
-        cur.execute("SELECT leader_func({0},'{1}');".format(member, password))
+        cur.execute("SELECT leader_func({0},{1},'{2}');".format(timestamp, member, password))
         writeOK()
     except:
         writeERROR(sys.exc_info()[1])
@@ -159,8 +152,9 @@ def votesCommand(args, cur):
         writeERROR(sys.exc_info()[1])
 
 def trollsCommand(args,cur):
+    timestamp = args['trolls']['timestamp']
     try:
-        cur.execute("SELECT trolls_func();")
+        cur.execute("SELECT trolls_func({0});".format(timestamp))
         data = cur.fetchall()
         writeOK(data)
     except:

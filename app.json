@@ -5,4 +5,4 @@
 { "downvote": { "timestamp": 1557475703, "password": "abc", "member": 1, "action":500}}
 { "downvote": { "timestamp": 1557475704, "password": "abc", "member": 1, "action":600}}
 { "votes": { "timestamp": 1557475705, "password": "abc", "member": 1}}
-{ "trolls": { }}
+{ "trolls": { "timestamp": 1557475710 }}

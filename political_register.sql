@@ -7,9 +7,10 @@ CHECK (VALUE IN ('u','d')) NOT NULL;
 CREATE TABLE members (
     id              integer PRIMARY KEY,
     password        text NOT NULL,
-    last_post_date  timestamp,
-    is_active       boolean DEFAULT true,
-    is_leader       boolean DEFAULT false
+    last_post_date  timestamp NOT NULL,
+    is_leader       boolean DEFAULT false,
+    upvotes         integer DEFAULT 0,
+    downvotes       integer DEFAULT 0
 );
 
 CREATE TABLE projects (
@@ -35,36 +36,39 @@ CREATE TABLE votes (
     FOREIGN KEY (action_id) REFERENCES actions (id)
 );
 
-CREATE TABLE votes_summary (
-    member_id   integer NOT NULL,
-    upvotes     integer DEFAULT 0,
-    downvotes   integer DEFAULT 0,
-    FOREIGN KEY (member_id) REFERENCES members (id)
+CREATE TABLE global_ids (
+    id      integer PRIMARY KEY
 );
 
-CREATE OR REPLACE FUNCTION check_and_deactivate_func() RETURNS TRIGGER
+-- CREATE OR REPLACE FUNCTION check_and_deactivate_func() RETURNS TRIGGER
+--     AS $$
+--     BEGIN
+--         UPDATE members SET is_active = false
+--         WHERE last_post_date IS NOT NULL 
+--             AND NEW.last_post_date - last_post_date > interval '1 year';
+
+--         IF (TG_OP = 'UPDATE' AND NEW.last_post_date - OLD.last_post_date > interval '1 year') THEN
+--             RETURN OLD;
+--         ELSE
+--             RETURN NEW;
+--         END IF;
+--     END;
+--     $$ LANGUAGE plpgsql;
+
+-- CREATE TRIGGER members_deactivation_trigger BEFORE INSERT OR UPDATE OF last_post_date
+--     ON members FOR EACH ROW EXECUTE PROCEDURE check_and_deactivate_func();
+
+CREATE OR REPLACE FUNCTION leader_func(action_time bigint,
+                                       member integer,
+                                       passwd text) 
+                                       RETURNS VOID
     AS $$
+    DECLARE
+        date_in_timestamp_format timestamp;
     BEGIN
-        UPDATE members SET is_active = false
-        WHERE last_post_date IS NOT NULL 
-            AND NEW.last_post_date - last_post_date > interval '1 year';
-
-        IF (TG_OP = 'UPDATE' AND NEW.last_post_date - OLD.last_post_date > interval '1 year') THEN
-            RETURN OLD;
-        ELSE
-            RETURN NEW;
-        END IF;
-    END;
-    $$ LANGUAGE plpgsql;
-
-CREATE TRIGGER members_deactivation_trigger BEFORE INSERT OR UPDATE OF last_post_date
-    ON members FOR EACH ROW EXECUTE PROCEDURE check_and_deactivate_func();
-
-CREATE OR REPLACE FUNCTION leader_func(member integer,passwd text) RETURNS VOID
-    AS $$
-    BEGIN
-        INSERT INTO members (id,password,is_leader) 
-        VALUES (member, crypt(passwd, gen_salt('md5')), true);
+        date_in_timestamp_format = TO_TIMESTAMP(action_time) AT TIME ZONE 'UTC';
+        INSERT INTO members (id,password,last_post_date,is_leader) 
+        VALUES (member, crypt(passwd, gen_salt('md5')), date_in_timestamp_format, true);
     END; 
     $$ LANGUAGE plpgsql
     SECURITY INVOKER;
@@ -110,9 +114,10 @@ CREATE OR REPLACE FUNCTION check_if_member_is_active_func(member integer, date t
     AS $$
     DECLARE
         active boolean;
+        last_activity timestamp;
     BEGIN
-        SELECT is_active INTO active FROM members WHERE id = member;
-        IF active THEN
+        SELECT last_post_date INTO last_activity FROM members WHERE id = member;
+        IF (date - last_activity <= interval '1 year') THEN
             UPDATE members SET last_post_date = date WHERE id = member;
         ELSE
             RAISE EXCEPTION 'Authorization error: Member with id % is deactivated
@@ -192,14 +197,11 @@ CREATE OR REPLACE FUNCTION upvote_downvote_func(action_time bigint,
         SELECT member_id INTO author_id FROM actions WHERE id = action;
     
         INSERT INTO votes VALUES (member, action, vote_type);
-        IF (author_id NOT IN (SELECT member_id FROM votes_summary)) THEN
-            INSERT INTO votes_summary VALUES (author_id);
-        END IF;
 
         IF (vote_type = 'u') THEN
-            UPDATE votes_summary SET upvotes = upvotes + 1 WHERE member_id = author_id;
+            UPDATE members SET upvotes = upvotes + 1 WHERE members.id = author_id;
         ELSE
-            UPDATE votes_summary SET downvotes = downvotes + 1 WHERE member_id = author_id;
+            UPDATE members SET downvotes = downvotes + 1 WHERE members.id = author_id;
         END IF;
     END;
     $$ LANGUAGE plpgsql
@@ -365,19 +367,23 @@ CREATE OR REPLACE FUNCTION votes_func(action_time bigint,
     $$ LANGUAGE plpgsql
     SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION trolls_func() RETURNS TABLE(member integer,
-                                                       upvotes integer,
-                                                       downvotes integer,
-                                                       active boolean)
+CREATE OR REPLACE FUNCTION trolls_func(action_time bigint) RETURNS TABLE(member integer,
+                                                                         upvotes integer,
+                                                                         downvotes integer,
+                                                                         active text)
     AS $$
+    DECLARE
+        actual_date timestamp;
     BEGIN
+        actual_date = TO_TIMESTAMP(action_time) AT TIME ZONE 'UTC';
         RETURN QUERY(
-            SELECT id, v.upvotes, v.downvotes, is_active
-            FROM members JOIN votes_summary v ON id = member_id
-            WHERE v.downvotes > v.upvotes
+            SELECT m.id, m.upvotes, m.downvotes, (CASE WHEN actual_date - last_post_date <= interval '1 year'
+                                                 THEN 'true' ELSE 'false' END)
+            FROM members m
+            WHERE m.downvotes > m.upvotes
             ORDER BY 
                 member ASC,
-                v.downvotes - v.upvotes DESC);
+                m.downvotes - m.upvotes DESC);
     END;
     $$ LANGUAGE plpgsql
     SECURITY DEFINER;
@@ -391,4 +397,4 @@ GRANT EXECUTE ON FUNCTION upvote_downvote_func(bigint,integer,text,integer,vote_
 GRANT EXECUTE ON FUNCTION actions_func(bigint,integer,text,action_types,integer,integer) TO app;
 GRANT EXECUTE ON FUNCTION projects_func(bigint,integer,text,integer) TO app;
 GRANT EXECUTE ON FUNCTION votes_func(bigint,integer,text,integer,integer) TO app;
-GRANT EXECUTE ON FUNCTION trolls_func() TO app;
+GRANT EXECUTE ON FUNCTION trolls_func(bigint) TO app;
