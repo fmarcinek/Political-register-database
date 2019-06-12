@@ -1,13 +1,16 @@
--- DROP TRIGGER members_deactivation_trigger ON members;
+DROP TRIGGER global_id_uniqueness_members_trigger ON members;
+DROP TRIGGER global_id_uniqueness_actions_trigger ON actions;
+DROP TRIGGER global_id_uniqueness_projects_trigger ON projects;
 
 DROP TABLE members CASCADE;
 DROP TABLE votes CASCADE;
 DROP TABLE projects CASCADE;
 DROP TABLE actions CASCADE;
-
+DROP TABLE global_ids CASCADE;
 
 DROP FUNCTION leader_func(bigint,integer,text);
--- DROP FUNCTION check_and_deactivate_func();
+DROP FUNCTION global_id_uniqueness_func();
+DROP FUNCTION global_id_uniqueness_projects_func();
 DROP FUNCTION save_member_func(integer,text,timestamp);
 DROP FUNCTION member_authorization_func(integer,text,bigint);
 DROP FUNCTION check_leader_rank_func(integer);

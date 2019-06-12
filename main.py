@@ -11,7 +11,7 @@ def cast(value):
         return value
 
 def prepareData(data):
-    data = [list(map(cast,d[0][1:-1].split(','))) for d in data]
+    data = [[cast(val) for val in d[0][1:-1].split(',')] for d in data]
     return data
 
 def writeOK(data=None):
@@ -182,7 +182,6 @@ def cleanDatabase():
     conn.commit()
     cur.close()
     conn.close()
-        
 
 if __name__=='__main__':
     conn = None

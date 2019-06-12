@@ -40,23 +40,34 @@ CREATE TABLE global_ids (
     id      integer PRIMARY KEY
 );
 
--- CREATE OR REPLACE FUNCTION check_and_deactivate_func() RETURNS TRIGGER
---     AS $$
---     BEGIN
---         UPDATE members SET is_active = false
---         WHERE last_post_date IS NOT NULL 
---             AND NEW.last_post_date - last_post_date > interval '1 year';
+CREATE OR REPLACE FUNCTION global_id_uniqueness_func() RETURNS TRIGGER
+    AS $$
+    BEGIN
+        INSERT INTO global_ids VALUES (NEW.id);
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
 
---         IF (TG_OP = 'UPDATE' AND NEW.last_post_date - OLD.last_post_date > interval '1 year') THEN
---             RETURN OLD;
---         ELSE
---             RETURN NEW;
---         END IF;
---     END;
---     $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION global_id_uniqueness_projects_func() RETURNS TRIGGER
+    AS $$
+    BEGIN
+        INSERT INTO global_ids VALUES (NEW.id);
+        IF (NEW.authority_id IS NOT NULL 
+            AND NEW.authority_id NOT IN (SELECT authority_id FROM projects)) THEN
+                INSERT INTO global_ids VALUES (NEW.authority_id);
+        END IF;
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
 
--- CREATE TRIGGER members_deactivation_trigger BEFORE INSERT OR UPDATE OF last_post_date
---     ON members FOR EACH ROW EXECUTE PROCEDURE check_and_deactivate_func();
+CREATE TRIGGER global_id_uniqueness_members_trigger BEFORE INSERT ON members
+    FOR EACH ROW EXECUTE PROCEDURE global_id_uniqueness_func();
+
+CREATE TRIGGER global_id_uniqueness_actions_trigger BEFORE INSERT ON actions
+    FOR EACH ROW EXECUTE PROCEDURE global_id_uniqueness_func();
+
+CREATE TRIGGER global_id_uniqueness_projects_trigger BEFORE INSERT ON projects
+    FOR EACH ROW EXECUTE PROCEDURE global_id_uniqueness_projects_func();
 
 CREATE OR REPLACE FUNCTION leader_func(action_time bigint,
                                        member integer,
